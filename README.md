@@ -35,7 +35,7 @@ instructed not to promote a bet into a recommendation to sound more decisive.
 Copy the skill into your agent's skills directory:
 
 ```bash
-git clone https://github.com/USER/seo-geo-audit
+git clone https://github.com/zeebees/seo-geo-audit
 cp -r seo-geo-audit/skills/seo-geo-audit ~/.claude/skills/
 ```
 
