@@ -42,24 +42,37 @@ are different jobs — say so explicitly rather than silently skipping them.
 4. **List what you could not check.** Anything needing owner-level access
    (Search Console, Bing Webmaster, GA4, real-user Core Web Vitals, backlinks)
    goes in a short closing list, not in the table.
-5. **Offer a PDF** (optional). If the report is a deliverable for someone else,
-   ask whether they want one — do not generate it unprompted.
+5. **Offer a PDF** (optional). Only if the report is a deliverable for someone
+   else, and only if asked — do not generate one unprompted.
 
-## PDF Output (optional)
+## PDF Output — strictly optional
 
-Write the report to a `.md` file, then:
+**The markdown table is the deliverable.** The audit is complete without a PDF.
+Never make the report conditional on PDF tooling, never install anything to
+produce one, and never withhold or delay findings because rendering failed.
+
+If the user asks for a PDF:
 
 ```bash
 node scripts/report-to-pdf.mjs report.md audit.pdf --site example.com
 ```
 
-Zero dependencies; finds Chrome/Chromium/Edge automatically (override with
-`CHROME=/path/to/chrome`). `--html` emits styled HTML instead, for when no
-browser is available. Renders landscape A4 with verdict and severity pills, a
-count strip in the header, and repeating table headers across pages.
+Requirements are Node (any version from the last few years) and any
+Chromium-based browser already on the machine — Chrome, Chromium or Edge.
+**There are no npm dependencies, no `npm install`, and no framework involved**;
+the script imports only `node:fs`, `node:child_process` and `node:path`.
 
-**Escape literal `|` inside table cells as `\|`** or the row will split into the
-wrong number of columns. The renderer unescapes them.
+Degrade in this order, and say which one happened:
+
+| Situation | What to do |
+|---|---|
+| Chrome not found | The script writes the styled HTML anyway and exits `2` with its path. Hand over the HTML — it prints to PDF from any browser |
+| Browser present, wrong path | Re-run with `CHROME=/path/to/chrome` |
+| No browser at all | Run with `--html` and deliver the HTML |
+| Node not installed | Deliver the markdown table. That is the deliverable; do not install Node to make a PDF |
+
+**Escape literal `|` inside table cells as `\|`** or the row splits into the wrong
+number of columns. The renderer unescapes them.
 
 ## Report Contract
 

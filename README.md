@@ -56,19 +56,28 @@ Then just ask: *"audit example.com for SEO and AI discoverability"*.
 | **G. Sitemaps & errors** (6) | generated sitemap, listing coverage, per-language alternates, true 404 vs soft-200 vs 403, `lastmod` honesty, internal linking |
 | **H. Owner access** | what it *can't* check — Search Console, Bing Webmaster, GA4, field CWV, backlinks — reported honestly rather than guessed |
 
-## PDF output
+## PDF output (optional)
 
-The report is markdown by default. To turn it into a client-ready PDF:
+**The markdown table is the deliverable — the PDF is a convenience.** The skill
+works fully without it and never blocks on rendering.
+
+If you do want a client-ready PDF:
 
 ```bash
 node skills/seo-geo-audit/scripts/report-to-pdf.mjs report.md audit.pdf --site example.com
 ```
 
-Zero dependencies — it locates Chrome, Chromium or Edge automatically and prints
-a landscape A4 document with colour-coded verdict and severity pills, a count
-strip in the header, and table headers that repeat across pages. Set
-`CHROME=/path/to/chrome` to override detection, or pass `--html` to emit styled
-HTML instead when no browser is available.
+**No `npm install`. No dependencies. No framework.** The script imports only
+`node:fs`, `node:child_process` and `node:path`, so all it needs is Node and any
+Chromium-based browser you already have — Chrome, Chromium or Edge, located
+automatically. Output is landscape A4 with colour-coded verdict and severity
+pills, a count strip in the header, and table headers that repeat across pages.
+
+- `CHROME=/path/to/chrome` — override browser detection
+- `--html` — emit styled HTML instead, to print from any browser yourself
+
+If no browser is found, the script still writes the HTML and tells you where it
+is, so the work is never lost.
 
 ## Verdict vocabulary
 
