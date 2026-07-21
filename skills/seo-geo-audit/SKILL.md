@@ -51,7 +51,7 @@ the could-not-check list below it. No sections, no narrative write-up.
 | Column | Contents |
 |---|---|
 | **Check** | The check name from `references/checks.md`, verbatim |
-| **Pass/Fail** | `PASS` · `FAIL` · `WARN` · `N/A` |
+| **Pass/Fail** | `PASS` · `PASS*` · `FAIL` · `WARN` · `ABSENT` · `N/A` |
 | **Severity** | `P1` breaks indexing or citation · `P2` real measurable loss · `P3` polish · `—` for PASS · `N/A` where the check does not apply |
 | **Action** | One imperative sentence, specific to what you observed |
 | **Evidence** | Verbatim observed bytes — one header line, tag, or command output. Never a paraphrase |
@@ -62,7 +62,19 @@ regress ("Keep the apex 301; re-test after any DNS change"). An `N/A` row states
 why it does not apply ("Single-language site"). A cell you cannot fill means the
 check was not really run — go run it.
 
-Row order: `FAIL`/`WARN` first sorted by severity, then `PASS`, then `N/A`.
+Two verdicts exist because the obvious four are not enough:
+
+- **`ABSENT`** — a `[bet]`-tier item is missing. **Never score this as `FAIL`.**
+  `llms.txt`, `FAQPage`, `.md` alternates and RSS are optional bets; a site
+  without them is not broken. Severity is always `P3`. Write the action as an
+  offer ("optional — add if cheap"), not a defect.
+- **`PASS*`** — the check passes on its own terms but something adjacent
+  undercuts it. Say both halves in the action. The canonical example: bot and
+  human HTML are byte-identical, so there is no cloaking — but both are an empty
+  JS shell, so the pass buys nothing. `PASS*` on cloaking, `FAIL` on C5.
+
+Row order: `FAIL`/`WARN` first sorted by severity, then `PASS*`, `PASS`,
+`ABSENT`, `N/A`.
 
 Keep evidence cells short — one header line or one tag. If output is long,
 truncate with `…` rather than reflowing it into prose.

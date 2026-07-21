@@ -69,6 +69,13 @@ curl -sSI --max-time 15 -o /dev/null -w '%{http_code} %{redirect_url}\n' http://
 Pass: `301` to `https://`. A hang or empty response is a P1 — link checkers and
 crawlers that probe HTTP first get nothing.
 
+**A7. HSTS header present** `[proven]`
+```bash
+curl -sSI https://$HOST/ | grep -i strict-transport-security
+```
+Pass: `max-age` of at least six months. Absence is `P3` — the HTTP→HTTPS redirect
+in A6 is what actually matters; HSTS removes the first-request round trip.
+
 ## B. Languages
 
 **B1. Every language has its own URL** `[proven]`
@@ -128,9 +135,45 @@ Auto-slug H2–H4. Cheap; unmeasured.
 
 **C5. Content is server-rendered** `[proven]`
 ```bash
-curl -sS -A 'Mozilla/5.0 (compatible; Googlebot/2.1)' $ART | wc -c
+curl -sS -A 'Mozilla/5.0 (compatible; Googlebot/2.1)' $ART \
+  | tee /tmp/raw.html | wc -c
+grep -oE '<div id="(root|app|__next)"></div>' /tmp/raw.html
+grep -c '<h1' /tmp/raw.html
 ```
-Compare against the rendered text. If the body arrives only via JS, note it.
+The highest-severity check in this section. A client-rendered SPA returns a few
+hundred bytes and an empty mount node — no `<h1>`, no body text. Report the byte
+count and the empty div verbatim; it is the most legible evidence in the report.
+Google may eventually render it; **answer-engine crawlers largely do not**, so a
+CSR site is close to invisible to citation regardless of content quality. Fix is
+SSR, SSG, or prerendering for bots.
+
+**C6. Open Graph and Twitter card completeness** `[proven]`
+```bash
+curl -sS $ART | grep -oE '<meta (property="og:[^"]+"|name="twitter:[^"]+")[^>]*>'
+```
+Want `og:title`, `og:description`, `og:type=article`, `og:url`, `og:image`,
+`article:published_time`/`modified_time`. Check the image is under ~300 KB —
+several scrapers degrade or skip above that.
+
+**C7. `robots` meta permits full snippets** `[proven]`
+```bash
+curl -sS $ART | grep -oE '<meta name="robots"[^>]*>'
+```
+Absent is fine (defaults are permissive). Fail on `nosnippet`, `noarchive`, or a
+low `max-snippet`, which cap what search *and* AI surfaces may quote from you.
+`max-snippet:-1, max-image-preview:large` is the maximally-quotable setting.
+
+**C8. Images have meaningful `alt`** `[proven]`
+```bash
+curl -sS $ART | grep -oE '<img[^>]*>' | grep -cv 'alt="[^"]\+"'
+```
+Proven accessibility win; also the only text description a crawler gets of an image.
+
+**C9. Mobile viewport declared** `[proven]`
+```bash
+curl -sS $ART | grep -oE '<meta name="viewport"[^>]*>'
+```
+Pass: `width=device-width, initial-scale=1`. Absence is a mobile-usability failure.
 
 ## D. Structured data
 
@@ -223,6 +266,15 @@ curl -sS https://$HOST/robots.txt | grep -i indexnow
 Notifies Bing, Yandex and a few others; they still decide whether to crawl.
 **Google is not a participant** — never imply IndexNow helps Google.
 
+**E7. RSS or Atom feed** `[bet]`
+```bash
+for f in /feed.xml /rss.xml /atom.xml /feed; do
+  printf '%s ' "$f"; curl -sS -o /dev/null -w '%{http_code}\n' "https://$HOST$f"
+done
+```
+Feeds remain a live discovery channel for aggregators and several AI ingestion
+pipelines. `ABSENT`, never `FAIL`.
+
 ## F. Speed & caching
 
 **F1. Public HTML is edge-cacheable** `[proven]`
@@ -293,6 +345,22 @@ Pass: `404` or `410`. Fail on a soft-`200` (lingers as a phantom URL) or a `403`
 (claims forbidden, which is not what is true). The reason is *correct description*,
 not crawl budget — Google says missing-page responses do not hurt crawl rate.
 Common causes: a static host 403ing missing files, or an SPA 200ing everything.
+
+**G5. `<lastmod>` reflects real content change** `[proven]`
+```bash
+curl -sS https://$HOST/sitemap.xml | grep -oE '<lastmod>[^<]+' | sort -u | head
+```
+Every URL sharing today's date means it is stamped at render, not at edit — the
+signal is then noise and crawlers learn to ignore it.
+
+**G6. Articles carry contextual internal links** `[proven]`
+```bash
+curl -sS $ART | grep -oE 'href="[^"]+"' | grep -c "$HOST\|href=\"/"
+```
+Distinguish chrome (header, breadcrumb, language switcher) from in-body
+contextual links. Zero contextual internal links orphans the page — it inherits
+no authority and gives a crawler no path onward. On a one-article site this is
+structural rather than negligent; say so.
 
 ## H. Requires owner access — do not guess
 

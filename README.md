@@ -43,16 +43,28 @@ Then just ask: *"audit example.com for SEO and AI discoverability"*.
 
 ## What it checks
 
+44 checks across seven groups, plus an honest list of what it cannot reach.
+
 | Group | Covers |
 |---|---|
-| **A. Hostname & canonical** | apex vs `www` both resolving, one-200 rule, self-referential canonicals, slash/query variants, HTTP→HTTPS |
-| **B. Languages** | one URL per language (catches same-URL JS toggles), reciprocal `hreflang`, `x-default`, no phantom translations |
-| **C. Page basics** | single `<h1>`, unique title/description, semantic landmarks, heading anchors, server rendering |
-| **D. Structured data** | `BlogPosting`/`BreadcrumbList`/`WebSite`, `</` escaping, E-E-A-T authorship, `FAQPage`, `sameAs` |
-| **E. AI crawler access** | answer vs user-triggered vs training crawlers, live per-bot fetch test, `noindex` on AI-facing copies, `.md` alternates, `llms.txt`, IndexNow |
-| **F. Speed & caching** | edge-cacheability, MISS→HIT, never-cache rules, cloaking diff, image optimization, Core Web Vitals |
-| **G. Sitemaps & errors** | generated sitemap, listing coverage, per-language alternates, true 404 vs soft-200 vs 403 |
+| **A. Hostname & canonical** (7) | apex vs `www` both resolving, one-200 rule, self-referential canonicals, slash/query variants, HTTP→HTTPS, HSTS |
+| **B. Languages** (4) | one URL per language (catches same-URL JS toggles), reciprocal `hreflang`, `x-default`, no phantom translations |
+| **C. Page basics** (9) | server rendering vs empty SPA shell, single `<h1>`, unique title/description, semantic landmarks, heading anchors, OG/Twitter, snippet directives, alt text, viewport |
+| **D. Structured data** (5) | `BlogPosting`/`BreadcrumbList`/`WebSite`, `</` escaping, E-E-A-T authorship, `FAQPage`, `sameAs` |
+| **E. AI crawler access** (7) | answer vs user-triggered vs training crawlers, live per-bot fetch test, `noindex` on AI-facing copies, `.md` alternates, `llms.txt`, IndexNow, feeds |
+| **F. Speed & caching** (6) | edge-cacheability, MISS→HIT, never-cache rules, cloaking diff, image optimization, Core Web Vitals |
+| **G. Sitemaps & errors** (6) | generated sitemap, listing coverage, per-language alternates, true 404 vs soft-200 vs 403, `lastmod` honesty, internal linking |
 | **H. Owner access** | what it *can't* check — Search Console, Bing Webmaster, GA4, field CWV, backlinks — reported honestly rather than guessed |
+
+## Verdict vocabulary
+
+Four verdicts are not enough, and the two extras carry most of the nuance:
+
+- **`ABSENT`** — an optional `[bet]` item is missing. Never scored as a failure.
+  A site without `llms.txt` or an RSS feed is not broken.
+- **`PASS*`** — passes on its own terms, but something adjacent undercuts it.
+  Bot and human HTML byte-identical means no cloaking — but if both are an empty
+  JS shell, the pass buys nothing.
 
 ## Scope
 
