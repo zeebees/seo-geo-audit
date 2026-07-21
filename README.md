@@ -56,6 +56,20 @@ Then just ask: *"audit example.com for SEO and AI discoverability"*.
 | **G. Sitemaps & errors** (6) | generated sitemap, listing coverage, per-language alternates, true 404 vs soft-200 vs 403, `lastmod` honesty, internal linking |
 | **H. Owner access** | what it *can't* check — Search Console, Bing Webmaster, GA4, field CWV, backlinks — reported honestly rather than guessed |
 
+## PDF output
+
+The report is markdown by default. To turn it into a client-ready PDF:
+
+```bash
+node skills/seo-geo-audit/scripts/report-to-pdf.mjs report.md audit.pdf --site example.com
+```
+
+Zero dependencies — it locates Chrome, Chromium or Edge automatically and prints
+a landscape A4 document with colour-coded verdict and severity pills, a count
+strip in the header, and table headers that repeat across pages. Set
+`CHROME=/path/to/chrome` to override detection, or pass `--html` to emit styled
+HTML instead when no browser is available.
+
 ## Verdict vocabulary
 
 Four verdicts are not enough, and the two extras carry most of the nuance:

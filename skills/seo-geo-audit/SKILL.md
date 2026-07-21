@@ -42,6 +42,24 @@ are different jobs — say so explicitly rather than silently skipping them.
 4. **List what you could not check.** Anything needing owner-level access
    (Search Console, Bing Webmaster, GA4, real-user Core Web Vitals, backlinks)
    goes in a short closing list, not in the table.
+5. **Offer a PDF** (optional). If the report is a deliverable for someone else,
+   ask whether they want one — do not generate it unprompted.
+
+## PDF Output (optional)
+
+Write the report to a `.md` file, then:
+
+```bash
+node scripts/report-to-pdf.mjs report.md audit.pdf --site example.com
+```
+
+Zero dependencies; finds Chrome/Chromium/Edge automatically (override with
+`CHROME=/path/to/chrome`). `--html` emits styled HTML instead, for when no
+browser is available. Renders landscape A4 with verdict and severity pills, a
+count strip in the header, and repeating table headers across pages.
+
+**Escape literal `|` inside table cells as `\|`** or the row will split into the
+wrong number of columns. The renderer unescapes them.
 
 ## Report Contract
 
