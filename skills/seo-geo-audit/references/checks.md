@@ -47,7 +47,10 @@ Both forms returning `200` splits credit. Pick one, 301 the other.
 ```bash
 curl -sS $ART | grep -i 'rel="canonical"'
 ```
-Pass: absolute URL, matches the fetched URL, present on article *and* index.
+Pass: a canonical is present on article *and* index and is self-referential (same
+page as the fetched URL). Absolute is preferred, but a **relative** canonical
+(`href="/path"`) is spec-valid and resolved by Google — accept it. Fail only if the
+tag is absent or points at a *different* page.
 
 **A4. Trailing-slash and query variants fold to canonical** `[proven]`
 ```bash
@@ -82,12 +85,15 @@ in A6 is what actually matters; HSTS removes the first-request round trip.
 The highest-value check in this file. A site can *look* bilingual and be
 monolingual to every crawler.
 ```bash
-curl -sS $ART | grep -oE 'data-lang="[a-z-]+"' | sort -u
-curl -sS $ART | grep -oE '<html[^>]*lang="[^"]*"'
+curl -sS $ART | grep -oiE '<link[^>]*rel="alternate"[^>]*hreflang="[^"]+"' | sort -u
+curl -sS $ART | grep -oE '<meta[^>]*property="og:locale:alternate"[^>]*>'
 ```
-Fail if translations live at the same URL behind a JS toggle (`data-lang` blocks,
-a hardcoded `<html lang>`, `og:locale:alternate` with no distinct URLs). The
-non-default language is then unrankable and uncitable, and the bilingual signals
+Fail if translations are advertised (`og:locale:alternate`, or `hreflang` that all
+resolves to one URL) but live at the same URL behind a JS toggle. **Do not use a
+raw `data-lang` count** — code-syntax highlighters emit `data-lang="js"` (and
+wrapper `<div data-lang><pre>`), which can't be told apart from a translation block
+and false-flags code blogs. The non-default language is then unrankable and
+uncitable, and the bilingual signals
 advertise a capability no crawler can reach. A language *menu* is fine — it just
 has to navigate to a different URL.
 
@@ -159,15 +165,18 @@ several scrapers degrade or skip above that.
 ```bash
 curl -sS $ART | grep -oE '<meta name="robots"[^>]*>'
 ```
-Absent is fine (defaults are permissive). Fail on `nosnippet`, `noarchive`, or a
-low `max-snippet`, which cap what search *and* AI surfaces may quote from you.
-`max-snippet:-1, max-image-preview:large` is the maximally-quotable setting.
+Absent is fine (defaults are permissive). Fail on `nosnippet` or `max-snippet:0`,
+which cap what search *and* AI surfaces may quote from you. **Not `noarchive`** — it
+only suppresses the cached-page link; snippets still show, so it is not a snippet
+cap. `max-snippet:-1, max-image-preview:large` is the maximally-quotable setting.
 
 **C8. Images have meaningful `alt`** `[proven]`
 ```bash
-curl -sS $ART | grep -oE '<img[^>]*>' | grep -cv 'alt="[^"]\+"'
+curl -sS $ART | grep -oE '<img[^>]*>' | grep -cv 'alt='
 ```
-Proven accessibility win; also the only text description a crawler gets of an image.
+Count only images with **no `alt` attribute at all**. An explicit `alt=""` is the
+valid, intentional marker for a *decorative* image — do not flag it. Proven
+accessibility win; also the only text description a crawler gets of an image.
 
 **C9. Mobile viewport declared** `[proven]`
 ```bash
@@ -229,8 +238,12 @@ for UA in OAI-SearchBot PerplexityBot Claude-SearchBot; do
   curl -sS -A "$UA" -o /dev/null -w '%{http_code}\n' $ART
 done
 ```
-Fail on any `403`/`429`/challenge. A permissive `robots.txt` with a blocking
-firewall is a silent, total citation failure.
+A `403`/`429`/challenge here is a **WARN, not a hard fail**. The answer engines
+verify their crawlers by source IP / reverse-DNS, so a site can correctly allow the
+real bots while blocking a spoofed UA sent from an arbitrary IP (like this one). It
+cannot confirm the *real* crawler is blocked — say so, and tell the owner to check
+their server logs (real crawler IPs) or the engine's own fetch tool. (Pass only on
+`2xx`; a `404`/`5xx`/timeout is also inconclusive, not a pass.)
 
 **E3. No `noindex` on the AI-facing copies** `[proven]`
 ```bash
@@ -301,11 +314,14 @@ Anything varying by session/login/token must stay dynamic. Cache on
 **public-and-identical**, not on status code — a personalized page or soft-404
 can also return 200.
 
-**F4. Bot and human get byte-identical HTML** `[proven]`
+**F4. Bot and human get the same content** `[proven]`
 ```bash
 diff <(curl -sS -A 'Mozilla/5.0' $ART) <(curl -sS -A 'OAI-SearchBot' $ART) | head
 ```
-Any difference is cloaking. Empty diff is the pass.
+Compare the *content*, not the bytes. A rotating CSP nonce, CSRF token, or
+timestamp makes two correct responses differ — that is **not** cloaking. Fail only
+on a material divergence: a different `<title>`/`<h1>`, or the bot getting a
+stripped/stub body (a challenge page, or far less text). Ignore per-request noise.
 
 **F5. Images optimized and on a CDN** `[proven]`
 ```bash
@@ -325,8 +341,12 @@ data needs owner access — put that in the could-not-check list.
 
 **G1. `sitemap.xml` exists, is generated, and is referenced in `robots.txt`** `[proven]`
 ```bash
-curl -sS https://$HOST/sitemap.xml | head -30
+curl -sS https://$HOST/robots.txt | grep -i '^sitemap:'   # the AUTHORITATIVE URL
+curl -sS https://$HOST/sitemap.xml | head -30             # the conventional path
 ```
+Honor the URL **declared in `robots.txt`** first — the path is case-sensitive (many
+sites serve `/Sitemap.xml`, not `/sitemap.xml`) and may sit on a CDN origin. Only
+call it missing if *neither* the declared URL nor `/sitemap.xml` returns a sitemap.
 Fail on hand-maintained drift. `<lastmod>` should reflect a real content change,
 not every render.
 
@@ -355,9 +375,14 @@ signal is then noise and crawlers learn to ignore it.
 
 **G6. Articles carry contextual internal links** `[proven]`
 ```bash
-curl -sS $ART | grep -oE 'href="[^"]+"' | grep -c "$HOST\|href=\"/"
+curl -sS $ART | grep -oE 'href="[^"]+"' \
+  | grep -vE 'href="(#|mailto:|tel:|//)' \
+  | grep -cE "href=\"/|href=\"https?://[^/]*$HOST/"
 ```
-Distinguish chrome (header, breadcrumb, language switcher) from in-body
+Count links to the **same host** only — root-relative (`/…`) or absolute on
+`$HOST`. Exclude `#`, `mailto:`, `tel:`, protocol-relative `//other`, and off-host
+absolutes; a bare `//external` or a host that only appears as a substring is *not*
+internal. Distinguish chrome (header, breadcrumb, language switcher) from in-body
 contextual links. Zero contextual internal links orphans the page — it inherits
 no authority and gives a crawler no path onward. On a one-article site this is
 structural rather than negligent; say so.

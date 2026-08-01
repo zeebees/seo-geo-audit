@@ -101,7 +101,7 @@ Two verdicts exist because the obvious four are not enough:
   offer ("optional — add if cheap"), not a defect.
 - **`PASS*`** — the check passes on its own terms but something adjacent
   undercuts it. Say both halves in the action. The canonical example: bot and
-  human HTML are byte-identical, so there is no cloaking — but both are an empty
+  human get the same content, so there is no cloaking — but both are an empty
   JS shell, so the pass buys nothing. `PASS*` on cloaking, `FAIL` on C5.
 
 Row order: `FAIL`/`WARN` first sorted by severity, then `PASS*`, `PASS`,
