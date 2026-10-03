@@ -32,7 +32,11 @@ are different jobs — say so explicitly rather than silently skipping them.
 
 1. **Scope it.** Identify the canonical host, one representative article URL, the
    index/listing URL, and every language variant. Audit at least one article
-   *and* one listing page — they differ in structured data.
+   *and* one listing page — they differ in structured data. Every page you audit
+   must **return `2xx` HTML**. A stale sitemap entry now serving a 404, or a PDF
+   listed in the sitemap, is not a page; auditing it invents missing titles and
+   viewports. Pick another URL. Not every site is a blog, either: on a marketing
+   site the "article" is just a representative content page.
 2. **Gather evidence first, judge second.** Work through `references/checks.md`
    top to bottom, running the stated command for each check and saving the
    output. Do not skip a check because the answer seems obvious from markup you
@@ -107,6 +111,11 @@ Two verdicts exist because the obvious four are not enough:
 Row order: `FAIL`/`WARN` first sorted by severity, then `PASS*`, `PASS`,
 `ABSENT`, `N/A`.
 
+**One row per check, even across many pages.** If you audited several pages,
+fold a page-level check into one row and give its reach in the Action cell ("on 11
+of 12 pages"). The one-line verdict counts **distinct failing checks**. One empty
+JS shell seen on 11 pages is one critical issue, not eleven.
+
 Keep evidence cells short — one header line or one tag. If output is long,
 truncate with `…` rather than reflowing it into prose.
 
@@ -133,3 +142,9 @@ look more decisive.
   Trust the reference over your training data.
 - **One page audited.** Article and listing pages carry different schema and
   often different cache rules.
+- **Turning "inconclusive" into "broken".** A probe that redirected, timed out or
+  was refused tells you nothing about the site. Report `N/A` and say why. A false
+  P1 does more harm than a missing verdict.
+- **Claiming more than the bytes show.** You read the HTML the server delivered,
+  not what JavaScript adds later. Write "the delivered HTML has no X", never "the
+  site has no X".

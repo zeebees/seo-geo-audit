@@ -36,9 +36,16 @@ IDX=https://example.com/en               # the listing/index page
 curl -sSI -o /dev/null -w '%{http_code} %{redirect_url}\n' https://$HOST/
 curl -sSI -o /dev/null -w '%{http_code} %{redirect_url}\n' https://www.$HOST/
 ```
-Pass: both respond, one 301s to the other. **Fail if either does not resolve at
-all** — a missing apex DNS record is the common one, and it dead-ends every
-typed visit and every backlink to that form. This is the single most-missed check.
+Pass: both respond, one 301s to the other. **Fail if exactly one does not resolve**
+— a missing apex DNS record is the common one, and it dead-ends every typed visit
+and every backlink to that form. This is the single most-missed check.
+
+**`N/A` on a subdomain.** Only a registrable domain has a `www` twin. Auditing
+`blog.example.com` would probe `www.blog.example.com`, which no sane DNS defines —
+that is not a missing record. Watch two-label suffixes: `example.com.au` and
+`example.co.uk` *are* apexes, so A1 still applies to them. If **neither** form
+responds, report `N/A` too: you cannot tell a dead site from your own blocked or
+offline fetch. The working form is what proves the other is genuinely dead.
 
 **A2. Only one host serves 200** `[proven]`
 Both forms returning `200` splits credit. Pick one, 301 the other.
@@ -58,7 +65,9 @@ curl -sSI -o /dev/null -w '%{http_code}\n' "$ART/"
 curl -sS "$ART?utm_source=x" | grep -i 'rel="canonical"'
 ```
 Pass: slash variant redirects or canonicalizes; `?utm=` variant stays 200 with a
-clean canonical (that is what folds it).
+clean canonical (that is what folds it). If you did not probe the variants and the
+page simply has no canonical, that is a `P3` `WARN`, not a `FAIL` — server-side 301s
+are an equally valid way to fold variants.
 
 **A5. Site root redirect is permanent** `[contested]`
 A `307`/`302` from `/` to `/en/` does not consolidate signals. Prefer `301`/`308`
@@ -69,8 +78,11 @@ Ask before calling it a fail.
 ```bash
 curl -sSI --max-time 15 -o /dev/null -w '%{http_code} %{redirect_url}\n' http://$HOST/
 ```
-Pass: `301` to `https://`. A hang or empty response is a P1 — link checkers and
-crawlers that probe HTTP first get nothing.
+Pass: `301` to `https://`. Fail `P1` only when plain HTTP **serves a response**
+without upgrading — link checkers and crawlers that probe HTTP first never reach
+the canonical page. No response at all (port 80 closed, connection refused, a
+timeout) is `N/A`: HTTPS-only is often deliberate, and a transient failure proves
+nothing. Say it was inconclusive.
 
 **A7. HSTS header present** `[proven]`
 ```bash
@@ -141,14 +153,29 @@ Auto-slug H2–H4. Cheap; unmeasured.
 
 **C5. Content is server-rendered** `[proven]`
 ```bash
-curl -sS -A 'Mozilla/5.0 (compatible; Googlebot/2.1)' $ART \
-  | tee /tmp/raw.html | wc -c
+curl -sS -A 'Mozilla/5.0 (compatible; Googlebot/2.1)' $ART > /tmp/raw.html
+wc -c < /tmp/raw.html
 grep -oE '<div id="(root|app|__next)"></div>' /tmp/raw.html
 grep -c '<h1' /tmp/raw.html
+# visible text inside <body> only — the number that decides this check
+perl -0777 -ne 's/.*?<body[^>]*>//is; s/<!--.*?-->//gs;
+  s/<(script|style|noscript|template)\b.*?<\/\1>//gis; s/<[^>]+>/ /g;
+  s/\s+/ /g; print length' /tmp/raw.html
 ```
-The highest-severity check in this section. A client-rendered SPA returns a few
-hundred bytes and an empty mount node — no `<h1>`, no body text. Report the byte
-count and the empty div verbatim; it is the most legible evidence in the report.
+The highest-severity check in this section. A client-rendered SPA returns an empty
+mount node — no `<h1>`, no body text. **Judge on visible `<body>` text, never on
+page bytes.** Analytics, pixel and affiliate tags in `<head>` routinely push an
+empty shell past 6 KB, so a byte threshold false-passes exactly the sites this
+check exists to catch. Fail when the body carries under ~200 characters of visible
+text *and* there is an empty mount node or no `<h1>`. Report the body-text count
+and the empty div verbatim; it is the most legible evidence in the report.
+
+When C5 fails, every other check that reads the page (canonical, headings,
+JSON-LD, Open Graph, internal links) is judging the empty shell. Scope those rows
+to **the delivered HTML** — "the delivered HTML has no canonical tag", never "the
+site has no canonical tag" — and note JavaScript may add them later. Serving
+rendered HTML is the one fix that delivers all of them; do not present each as a
+separate missing feature.
 Google may eventually render it; **answer-engine crawlers largely do not**, so a
 CSR site is close to invisible to citation regardless of content quality. Fix is
 SSR, SSG, or prerendering for bots.
@@ -175,7 +202,10 @@ cap. `max-snippet:-1, max-image-preview:large` is the maximally-quotable setting
 curl -sS $ART | grep -oE '<img[^>]*>' | grep -cv 'alt='
 ```
 Count only images with **no `alt` attribute at all**. An explicit `alt=""` is the
-valid, intentional marker for a *decorative* image — do not flag it. Proven
+valid, intentional marker for a *decorative* image — do not flag it. Also skip
+**tracking beacons**: an `<img>` inside `<noscript>` (Meta Pixel ships one), a
+`width="1" height="1"` pixel, or one styled `display:none`. They are not content
+images, and flagging them is a false finding on every site running ads. Proven
 accessibility win; also the only text description a crawler gets of an image.
 
 **C9. Mobile viewport declared** `[proven]`
@@ -190,9 +220,13 @@ Pass: `width=device-width, initial-scale=1`. Absence is a mobile-usability failu
 ```bash
 curl -sS $ART | sed -n 's/.*<script type="application\/ld+json">\(.*\)/\1/p' | head -5
 ```
-Pass: parses as JSON. Article pages want `BlogPosting` (headline, datePublished,
-dateModified, author, publisher, `mainEntityOfPage`, `inLanguage`, image) plus
-`BreadcrumbList`; index wants `WebSite` + `ItemList`.
+Pass: parses as JSON. Recommend the schema that fits **the page type** — do not
+assume every page is a blog post. Article pages want `BlogPosting` (headline,
+datePublished, dateModified, author, publisher, `mainEntityOfPage`, `inLanguage`,
+image) plus `BreadcrumbList`; a blog index wants `WebSite` + `ItemList`; the site
+root (or a bare locale root like `/en`) wants `WebSite` + `Organization`; a
+product or service page wants `Product`/`Service`. Do not suggest a sitelinks
+`SearchAction` — Google retired the sitelinks search box in November 2024.
 
 **D2. `</` escaped as `<\/` inside JSON-LD** `[proven]`
 A literal `</script>` in content breaks out of the block and silently kills it.
@@ -219,6 +253,11 @@ presence; it connects identities, it cannot create them.
 ```bash
 curl -sS https://$HOST/robots.txt
 ```
+Read `Allow:` lines too, with Google's precedence: the **longest matching rule
+wins**, and a bot with no group of its own follows `User-agent: *`. An allowlist
+file — `Disallow: /` plus `Allow: /$` and `Allow: /blog/` — does *not* block the
+root or the blog. Ignoring `Allow:` turns it into a false P1.
+
 The three that matter for citation: `OAI-SearchBot`, `PerplexityBot`,
 `Claude-SearchBot`. Distinguish three classes and do not conflate them:
 - *Answer crawlers* — the ones you want.
@@ -282,11 +321,13 @@ Notifies Bing, Yandex and a few others; they still decide whether to crawl.
 **E7. RSS or Atom feed** `[bet]`
 ```bash
 for f in /feed.xml /rss.xml /atom.xml /feed; do
-  printf '%s ' "$f"; curl -sS -o /dev/null -w '%{http_code}\n' "https://$HOST$f"
+  printf '%s ' "$f"; curl -sS "https://$HOST$f" | head -c 300 | tr '\n' ' '; echo
 done
 ```
-Feeds remain a live discovery channel for aggregators and several AI ingestion
-pipelines. `ABSENT`, never `FAIL`.
+A `200` is not a feed. An SPA answers every path, `/feed` included, with its HTML
+shell. Count a feed only if the body's root element is `<rss`, `<feed` or
+`<rdf:RDF` (after any `<?xml …?>` prolog). Feeds remain a live discovery channel
+for aggregators and several AI ingestion pipelines. `ABSENT`, never `FAIL`.
 
 ## F. Speed & caching
 
@@ -295,8 +336,14 @@ pipelines. `ABSENT`, never `FAIL`.
 curl -sSI $ART | grep -iE 'cache-control|cf-cache-status|x-cache|age'
 ```
 Pass: `s-maxage` (or CDN rule) on the shared copy, with a revalidating browser
-copy so a purge is globally effective. `no-store` on public article HTML is a
-straight loss — a common cause is an auth-app default leaking onto the blog host.
+copy so a purge is globally effective. `no-store` on public HTML is a straight
+loss — a common cause is an auth-app default leaking onto a public host.
+
+**Check the edge before blaming the origin header.** A CDN rule can override the
+origin's `Cache-Control` entirely (Cloudflare's "override origin" exists for this).
+If either fetch shows `cf-cache-status: HIT` or `x-cache: HIT`, the page *is* being
+cached, whatever the origin says. That is `PASS*`: it works, but the origin header
+no longer describes the behaviour, so keep the two in sync if the rule is removed.
 
 **F2. Second fetch is a HIT** `[proven]`
 ```bash
@@ -312,7 +359,8 @@ curl -sSI https://$HOST/definitely-not-a-real-page-xyz | grep -iE 'cache|http/'
 404s want BYPASS or a very short TTL, so a transient error is not pinned in place.
 Anything varying by session/login/token must stay dynamic. Cache on
 **public-and-identical**, not on status code — a personalized page or soft-404
-can also return 200.
+can also return 200. If the missing-page probe **redirected** (you are now looking
+at the destination's headers) or got no response, this is `N/A`, not a verdict.
 
 **F4. Bot and human get the same content** `[proven]`
 ```bash
@@ -322,6 +370,9 @@ Compare the *content*, not the bytes. A rotating CSP nonce, CSRF token, or
 timestamp makes two correct responses differ — that is **not** cloaking. Fail only
 on a material divergence: a different `<title>`/`<h1>`, or the bot getting a
 stripped/stub body (a challenge page, or far less text). Ignore per-request noise.
+If the bot fetch itself failed (`403`/`429`/timeout, or a `204`/`205` with no
+body), there is nothing to compare: `N/A`, and E2 reports the block. A failed
+fetch is not cloaking.
 
 **F5. Images optimized and on a CDN** `[proven]`
 ```bash
@@ -345,7 +396,8 @@ curl -sS https://$HOST/robots.txt | grep -i '^sitemap:'   # the AUTHORITATIVE UR
 curl -sS https://$HOST/sitemap.xml | head -30             # the conventional path
 ```
 Honor the URL **declared in `robots.txt`** first — the path is case-sensitive (many
-sites serve `/Sitemap.xml`, not `/sitemap.xml`) and may sit on a CDN origin. Only
+sites serve `/Sitemap.xml`, not `/sitemap.xml`) and may sit on a different origin
+such as a CDN — the owner declared it, so a cross-origin sitemap counts. Only
 call it missing if *neither* the declared URL nor `/sitemap.xml` returns a sitemap.
 Fail on hand-maintained drift. `<lastmod>` should reflect a real content change,
 not every render.
@@ -365,6 +417,9 @@ Pass: `404` or `410`. Fail on a soft-`200` (lingers as a phantom URL) or a `403`
 (claims forbidden, which is not what is true). The reason is *correct description*,
 not crawl budget — Google says missing-page responses do not hurt crawl rate.
 Common causes: a static host 403ing missing files, or an SPA 200ing everything.
+Use `-w '%{http_code}'` **without** `-L`. If the probe redirects (to the homepage,
+say), the redirect is the answer to report, not a soft-404: following it reads the
+destination's `200`. Redirected or failed probes are `N/A`.
 
 **G5. `<lastmod>` reflects real content change** `[proven]`
 ```bash
@@ -373,7 +428,7 @@ curl -sS https://$HOST/sitemap.xml | grep -oE '<lastmod>[^<]+' | sort -u | head
 Every URL sharing today's date means it is stamped at render, not at edit — the
 signal is then noise and crawlers learn to ignore it.
 
-**G6. Articles carry contextual internal links** `[proven]`
+**G6. Pages carry contextual internal links** `[proven]`
 ```bash
 curl -sS $ART | grep -oE 'href="[^"]+"' \
   | grep -vE 'href="(#|mailto:|tel:|//)' \
