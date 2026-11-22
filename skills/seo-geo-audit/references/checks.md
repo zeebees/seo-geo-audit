@@ -114,7 +114,9 @@ has to navigate to a different URL.
 curl -sS $ART | grep -i 'rel="alternate"'
 ```
 Pass: every version lists every version *including itself*, valid codes, and the
-same set appears on each translation.
+same set appears on each translation. A regional page language counts as covered by
+its base-language entry: a page with `<html lang="en-US">` that lists itself as
+`hreflang="en"` is self-referential. Fail only when a language has no entry at all.
 
 **B3. `x-default` present where there is a real fallback** `[proven]`
 Recommended, not required. Should point at the fallback for untargeted languages.
@@ -191,7 +193,9 @@ curl -sS $ART | grep -oE '<meta (property="og:[^"]+"|name="twitter:[^"]+")[^>]*>
 ```
 Want `og:title`, `og:description`, `og:type=article`, `og:url`, `og:image`,
 `article:published_time`/`modified_time`. Check the image is under ~300 KB —
-several scrapers degrade or skip above that.
+several scrapers degrade or skip above that. Count `og:*` tags written with
+`name=` instead of `property=` (`<meta name="og:url" …>`) as present; the major
+scrapers accept both, so grep for either attribute before calling a tag missing.
 
 **C7. `robots` meta permits full snippets** `[proven]`
 ```bash
@@ -305,7 +309,11 @@ duplication with a canonical instead — for a plain `.md` that means an HTTP
 curl -sS $ART.md | head -20
 ```
 If it advertises clean Markdown and emits HTML, the claim is false and it burns
-tokens on markup for no gain.
+tokens on markup for no gain. Two cases are not failures:
+- **The `.md` URL redirects to the HTML page** (check with `curl -sSIL`). There is
+  no Markdown alternate at all: report it absent (`P3`), not a false claim.
+- **The response is `content-type: text/markdown`** but contains `<html>` or
+  `<div>` inside a code sample. That is real Markdown documenting HTML; pass it.
 
 **E5. `llms.txt` present** `[bet]`
 ```bash
@@ -378,6 +386,10 @@ stripped/stub body (a challenge page, or far less text). Ignore per-request nois
 If the bot fetch itself failed (`403`/`429`/timeout, or a `204`/`205` with no
 body), there is nothing to compare: `N/A`, and E2 reports the block. A failed
 fetch is not cloaking.
+If the bot response is `content-type: text/markdown` (some sites serve AI crawlers
+a Markdown copy of the page), that is **not** cloaking; it is the token-efficient
+ideal. Compare the Markdown's length to the human page's visible text and pass it
+(with a note) unless it collapses to a stub, under about half the human text.
 
 **F5. Images optimized and on a CDN** `[proven]`
 ```bash
