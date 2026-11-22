@@ -310,8 +310,11 @@ curl -sS $ART.md | head -20
 ```
 If it advertises clean Markdown and emits HTML, the claim is false and it burns
 tokens on markup for no gain. Two cases are not failures:
-- **The `.md` URL redirects to the HTML page** (check with `curl -sSIL`). There is
-  no Markdown alternate at all: report it absent (`P3`), not a false claim.
+- **The page advertises no Markdown copy.** Only a page that links one
+  (`<link rel="alternate" type="text/markdown" …>`) makes a claim. If `$ART.md`
+  redirects to the HTML page, or returns the same HTML because the app ignores the
+  suffix (try `$ART.xyz`: a 200 there too means a catch-all), there is no Markdown
+  alternate at all: report it absent (`P3`), not a false claim.
 - **The response is `content-type: text/markdown`** but contains `<html>` or
   `<div>` inside a code sample. That is real Markdown documenting HTML; pass it.
 
