@@ -45,10 +45,26 @@ are different jobs — say so explicitly rather than silently skipping them.
    after `/blog/`, `/news/`, `/articles/` (so `/blog/some-post`, never `/blog/`).
    It must be **indexable** (no `noindex` in meta or `X-Robots-Tag`) and **not a
    utility page**: legal, privacy, terms, help, login, cart, search,
-   tag/category/author archives, `/@user` profiles. Nor is it **the homepage**:
+   tag/category/author archives, `/@user` and member profiles, contact pages,
+   checkout and order-confirmation flows (`/paypal-checkout` too), thank-you
+   pages, gift-card pages. Match whole path segments — `/contact-lenses` and
+   `/products/gift-cardigan` are real pages. A **bare section root** (`/shop`,
+   `/store`, `/blog`, `/news`, `/journal`, `/products`, `/collections`,
+   `/welcome`, `/home`) is a listing, not the content page. Nor is a **non-page
+   file** — `.pdf`, `.kml`, `.csv`, `.xlsx`, `.docx`, `.zip`, images, audio/video —
+   even when the sitemap lists it. Nor is it **the homepage**:
    sitemaps often list the root without a trailing slash while every real page
    has one, so "prefer URLs without a trailing slash" picks the homepage. Skip the
-   root and prefer deeper paths.
+   root and prefer deeper paths. **Fall back to the homepage only when every
+   candidate fails** (or the site has a single page): then it stands in, so the
+   page checks still judge what a crawler sees instead of silently not running.
+   A `202` or any `2xx` with an empty body is not a served page — treat it as a
+   failed candidate.
+
+   **Sweep politely.** Shared hosts throttle a burst from one IP. Retry a `429` or
+   a connection failure once — honor `Retry-After`, capped at about 3 seconds —
+   before calling a URL unavailable; one throttled fetch is not a dead page or a
+   missing DNS record.
 2. **Confirm you are seeing the real site.** Some sites answer `200` with a bot
    check or maintenance page, even to a browser UA. Before judging content, look
    for known challenge signatures (Cloudflare `Just a moment…` / `cf-chl` /
@@ -143,7 +159,17 @@ In the verdict, **state each critical issue as the problem in plain words**
 ("no sitemap found", "plain HTTP does not redirect to HTTPS"), never as the check
 title — "robots.txt allows the answer crawlers" listed as an issue reads as the
 opposite. Only say AI crawlers "see little of the content" when the cause is
-client-side rendering (C5) or `robots.txt` blocking the answer crawlers (E1).
+client-side rendering (C5) or `robots.txt` blocking **all three** answer crawlers
+(E1). When E1 blocks only one or two, name the engine instead ("robots.txt blocks
+Perplexity's answer crawler, so that engine can't use its pages") — and do not
+add an unqualified "a crawler can read the pages", even with no other critical
+issue.
+
+**When no content page could be fetched** (every request blocked, throttled or
+empty), say the page checks did not run and that this is **not a clean result** —
+re-run, or allow-list the audit. Never write "no critical failures" or "a crawler
+can read the pages" over checks that never ran. If a site-level critical issue
+exists too, list it and still add that the page checks did not run.
 
 Keep evidence cells short — one header line or one tag. If output is long,
 truncate with `…` rather than reflowing it into prose.

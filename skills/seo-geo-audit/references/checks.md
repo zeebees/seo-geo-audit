@@ -37,9 +37,14 @@ IDX=https://example.com/en               # the listing/index page
 curl -sSI -o /dev/null -w '%{http_code} %{redirect_url}\n' https://$HOST/
 curl -sSI -o /dev/null -w '%{http_code} %{redirect_url}\n' https://www.$HOST/
 ```
-Pass: both respond, one 301s to the other. **Fail if exactly one does not resolve**
-— a missing apex DNS record is the common one, and it dead-ends every typed visit
-and every backlink to that form. This is the single most-missed check.
+Pass: both respond, one 301s to the other. **Fail `P2` if exactly one does not
+resolve** — a missing apex DNS record is the common one, and it dead-ends every
+typed visit and every backlink to that form. This is the single most-missed check.
+It is `P2`, not `P1`: engines index whichever hostname works; the cost is dead
+visits and backlinks, not invisibility. A `429` or `5xx` from the other form is
+**not** a missing record — a throttled or erroring server answered, so it
+resolves. Retry once; if it still answers `429`/`5xx`, report `N/A` (it resolves,
+but whether it serves the site could not be confirmed).
 
 **`N/A` on a subdomain.** Only a registrable domain has a `www` twin. Auditing
 `blog.example.com` would probe `www.blog.example.com`, which no sane DNS defines —
@@ -49,7 +54,10 @@ responds, report `N/A` too: you cannot tell a dead site from your own blocked or
 offline fetch. The working form is what proves the other is genuinely dead.
 
 **A2. Only one host serves 200** `[proven]`
-Both forms returning `200` splits credit. Pick one, 301 the other.
+Both forms returning `200` splits credit (`FAIL` `P2`). Pick one, 301 the other.
+If both serve `200` but the content page's canonical names one of the two hosts,
+the canonical already consolidates them for search engines: `WARN` `P3`, noting
+that a 301 from the other host is still cleaner.
 
 **A3. Self-referential canonical on every page** `[proven]`
 ```bash
@@ -57,8 +65,10 @@ curl -sS $ART | grep -i 'rel="canonical"'
 ```
 Pass: a canonical is present on article *and* index and is self-referential (same
 page as the fetched URL). Absolute is preferred, but a **relative** canonical
-(`href="/path"`) is spec-valid and resolved by Google — accept it. Fail only if the
-tag is absent or points at a *different* page.
+(`href="/path"`) is spec-valid and resolved by Google — accept it. A missing
+canonical is `FAIL` `P2`. One pointing at a *different* page is `WARN` `P3`: it
+usually marks a deliberate duplicate (a `/welcome` alias of the homepage, say), and
+intent cannot be verified from outside.
 
 **A4. Trailing-slash and query variants fold to canonical** `[proven]`
 ```bash
@@ -81,9 +91,9 @@ Ask before calling it a fail.
 ```bash
 curl -sSI --max-time 15 -o /dev/null -w '%{http_code} %{redirect_url}\n' http://$HOST/
 ```
-Pass: `301` to `https://`. Fail `P1` only when plain HTTP **serves a `2xx` page**
+Pass: `301` to `https://`. Fail `P2` only when plain HTTP **serves a `2xx` page**
 without upgrading — link checkers and crawlers that probe HTTP first never reach
-the canonical page. A `4xx`/`5xx` on plain HTTP (a WAF `403` to the probe, say) is
+the canonical page. Not `P1`: engines prefer and index the HTTPS URL anyway. A `4xx`/`5xx` on plain HTTP (a WAF `403` to the probe, say) is
 `N/A`, not a fail. So is no response at all (port 80 closed, connection refused, a
 timeout): HTTPS-only is often deliberate, and a transient failure proves
 nothing. Say it was inconclusive.
@@ -94,6 +104,10 @@ curl -sSI https://$HOST/ | grep -i strict-transport-security
 ```
 Pass: `max-age` of at least six months. Absence is `P3` — the HTTP→HTTPS redirect
 in A6 is what actually matters; HSTS removes the first-request round trip.
+Read the header from **any** HTTPS response under `400` (apex, www, the content
+page, `robots.txt`, the sitemap), not only the apex `HEAD`: some servers reject
+`HEAD` with a `405` but send HSTS on `GET`. If every request was blocked or
+errored, there are no headers to read: `N/A` (inconclusive), not a `WARN`.
 
 ## B. Languages
 
@@ -122,7 +136,13 @@ same set appears on each translation. A regional page language counts as covered
 its base-language entry: a page with `<html lang="en-US">` that lists itself as
 `hreflang="en"` is self-referential. The reverse holds too: `<html lang="en">` with
 only regional entries (`hreflang="en-US"`, `"en-GB"`, … — the Shopify Markets
-pattern) is covered. Fail only when a language has no entry at all.
+pattern) is covered. Chinese is tagged by region *or* by script for the same two
+variants: treat `zh-CN`/`zh-SG` as `zh-Hans` and `zh-TW`/`zh-HK`/`zh-MO` as
+`zh-Hant`, so `<html lang="zh-CN">` is covered by `hreflang="zh-Hans"`. Take the
+page's languages from `<html lang>` and `<link rel="alternate" hreflang>` only — a
+language-switcher `<a hreflang>` is not an annotation, and `x-default` is not a
+language, so never report it as missing. Fail only when a language has no entry
+at all.
 
 **B3. `x-default` present where there is a real fallback** `[proven]`
 Recommended, not required. Should point at the fallback for untargeted languages.
@@ -145,9 +165,11 @@ Markdown `# Title`. Fix by demoting body headings at render time.
 ```bash
 for u in "$ART" "$IDX"; do curl -sS "$u" | grep -iE '<title>|name="description"'; done
 ```
-Fail on a site-wide default, a missing description, or literal newlines inside
-the attribute. Note these *influence* but do not control the SERP — Google
-frequently rewrites both.
+Fail `P2` on a missing title, a site-wide default, or literal newlines inside
+the attribute. A missing description **alone** is `WARN` `P3`: Google builds most
+snippets from the page text anyway, and no answer engine documents relying on it
+— the description just gives the owner a say. Note these *influence* but do not
+control the SERP — Google frequently rewrites both.
 
 **C3. Semantic landmarks** `[proven]`
 ```bash
@@ -210,9 +232,10 @@ Want `og:title`, `og:description`, `og:type=article`, `og:url`, `og:image`,
 several scrapers degrade or skip above that. Count `og:*` tags written with
 `name=` instead of `property=` (`<meta name="og:url" …>`) as present; the major
 scrapers accept both, so grep for either attribute before calling a tag missing.
-Missing `og:title`, `og:description` or `og:image` is a `FAIL`. Missing only
-`og:type` / `og:url` is `P3`: the spec lists them as required, but Facebook
-defaults them (`website`, the fetched URL).
+Any missing Open Graph tag — `og:title` and `og:image` included — is `WARN` `P3`:
+Open Graph shapes share cards, and no search or answer engine requires it to index
+the page. Missing only `og:type` / `og:url` is the mildest case: the spec lists
+them as required, but Facebook defaults them (`website`, the fetched URL).
 
 **C7. `robots` meta permits full snippets** `[proven]`
 ```bash
@@ -284,6 +307,18 @@ wins**, and a bot with no group of its own follows `User-agent: *`. An allowlist
 file — `Disallow: /` plus `Allow: /$` and `Allow: /blog/` — does *not* block the
 root or the blog. Ignoring `Allow:` turns it into a false P1.
 
+Severity depends on how many answer crawlers are blocked at the root: **all
+three** is `P1`; one or two is `P2` — a meaningful, often deliberate restriction.
+Name the engine it hides the site from ("robots.txt blocks Perplexity's answer
+crawler") and treat removal as optional if the block is intended.
+
+**`N/A` on a dead site.** If no content page could be fetched and **both** apex and
+www answer `404`/`410`/`5xx` or not at all (an expired hosting plan serving a
+"Website Expired" page), the `robots.txt` is a platform placeholder, not the
+owner's choice. Say the site is not serving pages and re-run once it is. A
+`403`/`405`/`429` does **not** count as dead: that is a site blocking or
+rate-limiting the audit, and its `robots.txt` block is real.
+
 The three that matter for citation: `OAI-SearchBot`, `PerplexityBot`,
 `Claude-SearchBot`. Distinguish three classes and do not conflate them:
 - *Answer crawlers* — the ones you want.
@@ -320,6 +355,9 @@ their AI search too.** So a `noindex` added to a clean `.md` alternate to dodge
 duplicate content hides it from the exact engines it was built to feed. Handle
 duplication with a canonical instead — for a plain `.md` that means an HTTP
 `Link: rel="canonical"` header, not an HTML tag — or drop the alternate entirely.
+Severity: a `noindex` on the HTML content page itself is `FAIL` `P2`. A `noindex`
+on **only** the `.md` duplicate is `WARN` `P3` — a common deliberate pattern, and
+the HTML original stays indexable.
 
 **E4. `.md` alternate serves real Markdown** `[bet]`
 ```bash
@@ -370,8 +408,10 @@ for aggregators and several AI ingestion pipelines. `ABSENT`, never `FAIL`.
 curl -sSI $ART | grep -iE '^(cache-control|cf-cache-status|x-cache|x-vercel-cache|cache-status|age):'
 ```
 Pass: `s-maxage` (or CDN rule) on the shared copy, with a revalidating browser
-copy so a purge is globally effective. `no-store` on public HTML is a straight
-loss — a common cause is an auth-app default leaking onto a public host.
+copy so a purge is globally effective. `no-store` on public HTML is `WARN` `P3`:
+no CDN can cache it and every crawler visit hits the origin, but caching helps
+crawl capacity rather than gating visibility. A common cause is an auth-app
+default leaking onto a public host; keep `no-store` only for personalized pages.
 
 **Check the edge before blaming the origin header.** A CDN rule can override the
 origin's `Cache-Control` entirely (Cloudflare's "override origin" exists for this).
@@ -405,9 +445,13 @@ at the destination's headers) or got no response, this is `N/A`, not a verdict.
 diff <(curl -sS -A 'Mozilla/5.0' $ART) <(curl -sS -A 'OAI-SearchBot' $ART) | head
 ```
 Compare the *content*, not the bytes. A rotating CSP nonce, CSRF token, or
-timestamp makes two correct responses differ — that is **not** cloaking. Fail only
-on a material divergence: a different `<title>`/`<h1>`, or the bot getting a
-stripped/stub body (a challenge page, or far less text). Ignore per-request noise.
+timestamp makes two correct responses differ — that is **not** cloaking. Ignore
+per-request noise. Fail `P2` only when the bot gets a stripped/stub body (a
+challenge page, or under about half the human page's visible text): crawlers miss
+content people see. A different `<title>`/`<h1>` with as much text is **dynamic
+rendering**, not cloaking — search engines accept it when the content is
+equivalent. Report it `WARN` `P3` ("check the crawler version carries the same
+information") and never use the word "cloaking" for it.
 If the bot fetch itself failed (`403`/`429`/timeout, or a `204`/`205` with no
 body), there is nothing to compare: `N/A`, and E2 reports the block. A failed
 fetch is not cloaking.
@@ -445,7 +489,11 @@ A missing sitemap is `P2`, not `P1`: a well-linked site is crawled fine without
 one. If `robots.txt` itself could not be fetched (network error, timeout, a
 challenge), whether it references the sitemap is unknown, not missing — say so,
 and do not let E1 claim "no robots.txt was served" either. Only a real `404`
-means there is none. Fail on hand-maintained drift. `<lastmod>` should reflect a real content change,
+means there is none. Likewise for the sitemap itself: only a `404`/`410` says "no
+sitemap". A `403`/`429`/`5xx` is the audit being blocked or throttled — `N/A`
+(inconclusive). And a `404` on `/sitemap.xml` while `robots.txt` was blocked is
+also `N/A`: the real sitemap may be declared there at another path. Fail on
+hand-maintained drift. `<lastmod>` should reflect a real content change,
 not every render.
 
 **Sitemap index.** If the root element is `<sitemapindex>`, the `<loc>` entries are
@@ -489,6 +537,10 @@ Common causes: a static host 403ing missing files, or an SPA 200ing everything.
 Use `-w '%{http_code}'` **without** `-L`. If the probe redirects (to the homepage,
 say), the redirect is the answer to report, not a soft-404: following it reads the
 destination's `200`. Redirected or failed probes are `N/A`.
+Only two wrong answers fail: a `2xx` (soft-404), or a `403` **while real pages
+load**. Anything else — a throttle or odd status (`402`, `419`, `429`, `5xx`), or a
+`403` from a site that blocks the audit everywhere — says nothing about
+missing-page handling: `N/A`.
 
 **G5. `<lastmod>` reflects real content change** `[proven]`
 ```bash
