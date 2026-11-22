@@ -41,16 +41,32 @@ are different jobs — say so explicitly rather than silently skipping them.
    and pick page URLs from those; never audit a `.xml`, `.md`, `.txt`, `.json` or
    `.pdf` entry as the content page. Not every site is a blog, either: on a
    marketing site the "article" is just a representative content page.
-2. **Gather evidence first, judge second.** Work through `references/checks.md`
+   The article must be **an actual post**, not the listing: a path with a segment
+   after `/blog/`, `/news/`, `/articles/` (so `/blog/some-post`, never `/blog/`).
+   It must be **indexable** (no `noindex` in meta or `X-Robots-Tag`) and **not a
+   utility page**: legal, privacy, terms, help, login, cart, search,
+   tag/category/author archives, `/@user` profiles.
+2. **Confirm you are seeing the real site.** Some sites answer `200` with a bot
+   check or maintenance page, even to a browser UA. Before judging content, look
+   for known challenge signatures (Cloudflare `Just a moment…` / `cf-chl` /
+   `challenge-platform`, Volcano Engine `正在进行安全检测`, DataDome
+   `captcha-delivery.com`, PerimeterX/HUMAN `px-captcha`, Imperva
+   `_Incapsula_Resource`, Sucuri firewall, AWS WAF challenge) or maintenance text
+   ("maintenance is in progress") on a page with little visible text. If so, the
+   verdict is "couldn't see the real page": every content check (C, D, A3, B, G6)
+   is `N/A`, not a list of failures. A maintenance page served as `200` is one
+   finding (it should be `503`); a challenge served to a browser UA is the reason
+   the audit is inconclusive.
+3. **Gather evidence first, judge second.** Work through `references/checks.md`
    top to bottom, running the stated command for each check and saving the
    output. Do not skip a check because the answer seems obvious from markup you
    already read — several checks exist precisely because markup lies.
-3. **Emit the table** (contract below). One row per check in the reference,
+4. **Emit the table** (contract below). One row per check in the reference,
    including the ones that passed.
-4. **List what you could not check.** Anything needing owner-level access
+5. **List what you could not check.** Anything needing owner-level access
    (Search Console, Bing Webmaster, GA4, real-user Core Web Vitals, backlinks)
    goes in a short closing list, not in the table.
-5. **Offer a PDF** (optional). Only if the report is a deliverable for someone
+6. **Offer a PDF** (optional). Only if the report is a deliverable for someone
    else, and only if asked — do not generate one unprompted.
 
 ## PDF Output — strictly optional
@@ -119,6 +135,12 @@ Row order: `FAIL`/`WARN` first sorted by severity, then `PASS*`, `PASS`,
 fold a page-level check into one row and give its reach in the Action cell ("on 11
 of 12 pages"). The one-line verdict counts **distinct failing checks**. One empty
 JS shell seen on 11 pages is one critical issue, not eleven.
+
+In the verdict, **state each critical issue as the problem in plain words**
+("no sitemap found", "plain HTTP does not redirect to HTTPS"), never as the check
+title — "robots.txt allows the answer crawlers" listed as an issue reads as the
+opposite. Only say AI crawlers "see little of the content" when the cause is
+client-side rendering (C5) or `robots.txt` blocking the answer crawlers (E1).
 
 Keep evidence cells short — one header line or one tag. If output is long,
 truncate with `…` rather than reflowing it into prose.

@@ -7,6 +7,7 @@ Set once:
 
 ```bash
 HOST=example.com          # canonical host, no scheme
+SITE=example.com          # registrable domain (HOST minus any subdomain)
 ART=https://example.com/en/some-post     # a representative article
 IDX=https://example.com/en               # the listing/index page
 ```
@@ -67,7 +68,9 @@ curl -sS "$ART?utm_source=x" | grep -i 'rel="canonical"'
 Pass: slash variant redirects or canonicalizes; `?utm=` variant stays 200 with a
 clean canonical (that is what folds it). If you did not probe the variants and the
 page simply has no canonical, that is a `P3` `WARN`, not a `FAIL` — server-side 301s
-are an equally valid way to fold variants.
+are an equally valid way to fold variants. If A3 already fails on a missing
+canonical, do not fail A4 for the same missing tag: judge A4 only on what the
+variant probes show (a slash variant that 200s with no redirect, say).
 
 **A5. Site root redirect is permanent** `[contested]`
 A `307`/`302` from `/` to `/en/` does not consolidate signals. Prefer `301`/`308`
@@ -78,10 +81,11 @@ Ask before calling it a fail.
 ```bash
 curl -sSI --max-time 15 -o /dev/null -w '%{http_code} %{redirect_url}\n' http://$HOST/
 ```
-Pass: `301` to `https://`. Fail `P1` only when plain HTTP **serves a response**
+Pass: `301` to `https://`. Fail `P1` only when plain HTTP **serves a `2xx` page**
 without upgrading — link checkers and crawlers that probe HTTP first never reach
-the canonical page. No response at all (port 80 closed, connection refused, a
-timeout) is `N/A`: HTTPS-only is often deliberate, and a transient failure proves
+the canonical page. A `4xx`/`5xx` on plain HTTP (a WAF `403` to the probe, say) is
+`N/A`, not a fail. So is no response at all (port 80 closed, connection refused, a
+timeout): HTTPS-only is often deliberate, and a transient failure proves
 nothing. Say it was inconclusive.
 
 **A7. HSTS header present** `[proven]`
@@ -116,7 +120,9 @@ curl -sS $ART | grep -i 'rel="alternate"'
 Pass: every version lists every version *including itself*, valid codes, and the
 same set appears on each translation. A regional page language counts as covered by
 its base-language entry: a page with `<html lang="en-US">` that lists itself as
-`hreflang="en"` is self-referential. Fail only when a language has no entry at all.
+`hreflang="en"` is self-referential. The reverse holds too: `<html lang="en">` with
+only regional entries (`hreflang="en-US"`, `"en-GB"`, … — the Shopify Markets
+pattern) is covered. Fail only when a language has no entry at all.
 
 **B3. `x-default` present where there is a real fallback** `[proven]`
 Recommended, not required. Should point at the fallback for untargeted languages.
@@ -145,9 +151,11 @@ frequently rewrites both.
 
 **C3. Semantic landmarks** `[proven]`
 ```bash
-curl -sS $ART | grep -oE '<(article|main|nav|header|footer)[ >]' | sort | uniq -c
+curl -sS $ART | grep -oE '<(article|main|nav|header|footer)[ >]|role="(main|navigation|banner|contentinfo)"' | sort | uniq -c
 ```
-Proven win is accessibility; crawler parsing is the secondary benefit.
+Proven win is accessibility; crawler parsing is the secondary benefit. An ARIA
+`role="main"` (and `navigation`/`banner`/`contentinfo`) counts as the landmark;
+do not report "no `<main>`" when it is present.
 
 **C4. Headings carry `id` anchors** `[bet]`
 Deep anchors let answer engines and Google passage features cite a *section*.
@@ -169,8 +177,14 @@ mount node — no `<h1>`, no body text. **Judge on visible `<body>` text, never 
 page bytes.** Analytics, pixel and affiliate tags in `<head>` routinely push an
 empty shell past 6 KB, so a byte threshold false-passes exactly the sites this
 check exists to catch. Fail when the body carries under ~200 characters of visible
-text *and* there is an empty mount node or no `<h1>`. Report the body-text count
-and the empty div verbatim; it is the most legible evidence in the report.
+text *and* there is evidence of client rendering: an empty mount node
+(`#root`/`#app`/`#__next`), or a body that is mostly `<script>` tags. Report the
+body-text count and the empty div verbatim; it is the most legible evidence in the
+report. **A short page with no scripts is server-rendered, just thin** — a missing
+`<h1>` alone is not evidence of an SPA. Never call that "client-rendered".
+
+If the thin body is a bot check or maintenance page (signatures in SKILL.md
+workflow step 2), it is not C5 at all: the audit could not see the real page.
 
 Before failing C5, confirm `$ART` is an HTML page: check the response
 `content-type` and that the body has a `<body>` tag. A few hundred bytes with no
@@ -196,6 +210,9 @@ Want `og:title`, `og:description`, `og:type=article`, `og:url`, `og:image`,
 several scrapers degrade or skip above that. Count `og:*` tags written with
 `name=` instead of `property=` (`<meta name="og:url" …>`) as present; the major
 scrapers accept both, so grep for either attribute before calling a tag missing.
+Missing `og:title`, `og:description` or `og:image` is a `FAIL`. Missing only
+`og:type` / `og:url` is `P3`: the spec lists them as required, but Facebook
+defaults them (`website`, the fetched URL).
 
 **C7. `robots` meta permits full snippets** `[proven]`
 ```bash
@@ -327,12 +344,13 @@ engine reads it** — they document ordinary crawling and `robots.txt`. Report a
 cheap bet, never as a lever that pays off today. If present, check it is written
 in the site's primary language.
 
-**E6. IndexNow key file** `[proven]`
+**E6. IndexNow key file** `[bet]`
 ```bash
 curl -sS https://$HOST/robots.txt | grep -i indexnow
 ```
 Notifies Bing, Yandex and a few others; they still decide whether to crawl.
-**Google is not a participant** — never imply IndexNow helps Google.
+**Google is not a participant** — never imply IndexNow helps Google. Optional:
+absence is `ABSENT` `P3`, never a `WARN` — most well-run sites do not use it.
 
 **E7. RSS or Atom feed** `[bet]`
 ```bash
@@ -349,7 +367,7 @@ for aggregators and several AI ingestion pipelines. `ABSENT`, never `FAIL`.
 
 **F1. Public HTML is edge-cacheable** `[proven]`
 ```bash
-curl -sSI $ART | grep -iE 'cache-control|cf-cache-status|x-cache|age'
+curl -sSI $ART | grep -iE '^(cache-control|cf-cache-status|x-cache|x-vercel-cache|cache-status|age):'
 ```
 Pass: `s-maxage` (or CDN rule) on the shared copy, with a revalidating browser
 copy so a purge is globally effective. `no-store` on public HTML is a straight
@@ -357,16 +375,20 @@ loss — a common cause is an auth-app default leaking onto a public host.
 
 **Check the edge before blaming the origin header.** A CDN rule can override the
 origin's `Cache-Control` entirely (Cloudflare's "override origin" exists for this).
-If either fetch shows `cf-cache-status: HIT` or `x-cache: HIT`, the page *is* being
-cached, whatever the origin says. That is `PASS*`: it works, but the origin header
+Any of these proves a shared cache served the page, whatever the origin says:
+`cf-cache-status: HIT`, `x-cache: HIT`, `x-vercel-cache: HIT|STALE|PRERENDER`, an
+RFC 9211 `Cache-Status` with `hit` (`"Netlify Edge"; hit`) or `fwd=…; stored`, or
+`Age:` greater than `0`. That is `PASS*`: it works, but the origin header
 no longer describes the behaviour, so keep the two in sync if the rule is removed.
 
 **F2. Second fetch is a HIT** `[proven]`
 ```bash
-curl -sSI $ART | grep -i 'cf-cache-status\|x-cache'
-curl -sSI $ART | grep -i 'cf-cache-status\|x-cache'
+curl -sSI $ART | grep -iE '^(cf-cache-status|x-cache|x-vercel-cache|cache-status|age):'
+curl -sSI $ART | grep -iE '^(cf-cache-status|x-cache|x-vercel-cache|cache-status|age):'
 ```
-Pass: MISS then HIT at a warm edge.
+Pass: MISS then HIT at a warm edge (or any hit signal listed under F1). If neither
+fetch carries a cache header at all, the result is unknown: `N/A` ("no cache
+header exposed"), not a `WARN`. Absence of evidence is not a miss.
 
 **F3. Errors and personalized pages are not cached** `[proven]`
 ```bash
@@ -419,7 +441,11 @@ Honor the URL **declared in `robots.txt`** first — the path is case-sensitive 
 sites serve `/Sitemap.xml`, not `/sitemap.xml`) and may sit on a different origin
 such as a CDN — the owner declared it, so a cross-origin sitemap counts. Only
 call it missing if *neither* the declared URL nor `/sitemap.xml` returns a sitemap.
-Fail on hand-maintained drift. `<lastmod>` should reflect a real content change,
+A missing sitemap is `P2`, not `P1`: a well-linked site is crawled fine without
+one. If `robots.txt` itself could not be fetched (network error, timeout, a
+challenge), whether it references the sitemap is unknown, not missing — say so,
+and do not let E1 claim "no robots.txt was served" either. Only a real `404`
+means there is none. Fail on hand-maintained drift. `<lastmod>` should reflect a real content change,
 not every render.
 
 **Sitemap index.** If the root element is `<sitemapindex>`, the `<loc>` entries are
@@ -478,10 +504,13 @@ is wrong.
 ```bash
 curl -sS $ART | grep -oE 'href="[^"]+"' \
   | grep -vE 'href="(#|mailto:|tel:|//)' \
-  | grep -cE "href=\"/|href=\"https?://[^/]*$HOST/"
+  | grep -cE "href=\"/|href=\"https?://([^/\"]*\.)?$SITE/"
 ```
-Count links to the **same host** only — root-relative (`/…`) or absolute on
-`$HOST`. Exclude `#`, `mailto:`, `tel:`, protocol-relative `//other`, and off-host
+`SITE` is the registrable domain (`SITE=example.com` for `blog.example.com`;
+dots in it match loosely, fine for a count). Count links on the **same site** only —
+root-relative (`/…`) or absolute on `$SITE` or any of its subdomains. A portal
+whose links all go to `en.example.org`, `de.example.org` is linking internally,
+not orphaned. Exclude `#`, `mailto:`, `tel:`, protocol-relative `//other`, and off-host
 absolutes; a bare `//external` or a host that only appears as a substring is *not*
 internal. Distinguish chrome (header, breadcrumb, language switcher) from in-body
 contextual links. Zero contextual internal links orphans the page — it inherits
