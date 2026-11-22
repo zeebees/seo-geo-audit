@@ -170,6 +170,11 @@ check exists to catch. Fail when the body carries under ~200 characters of visib
 text *and* there is an empty mount node or no `<h1>`. Report the body-text count
 and the empty div verbatim; it is the most legible evidence in the report.
 
+Before failing C5, confirm `$ART` is an HTML page: check the response
+`content-type` and that the body has a `<body>` tag. A few hundred bytes with no
+`<body>` is a sitemap or text file picked by mistake (see the sitemap-index note
+under G1), not an empty shell.
+
 When C5 fails, every other check that reads the page (canonical, headings,
 JSON-LD, Open Graph, internal links) is judging the empty shell. Scope those rows
 to **the delivered HTML** — "the delivered HTML has no canonical tag", never "the
@@ -401,6 +406,22 @@ such as a CDN — the owner declared it, so a cross-origin sitemap counts. Only
 call it missing if *neither* the declared URL nor `/sitemap.xml` returns a sitemap.
 Fail on hand-maintained drift. `<lastmod>` should reflect a real content change,
 not every render.
+
+**Sitemap index.** If the root element is `<sitemapindex>`, the `<loc>` entries are
+child sitemaps, not pages — the shape every Shopify store and most Yoast WordPress
+sites serve. Fetch the children (the first five are enough for sampling) and read
+page URLs from them:
+```bash
+curl -sS https://$HOST/sitemap.xml | grep -c '<sitemapindex'      # 1 = an index
+curl -sS https://$HOST/sitemap.xml | grep -oE '<loc>[^<]+' | sed 's/<loc>//; s/&amp;/\&/g' | head -5 |
+  while read -r child; do curl -sS "$child" | grep -oE '<loc>[^<]+' | sed 's/<loc>//'; done | head -40
+```
+`<loc>` is XML, so un-escape `&amp;` before fetching (Shopify child URLs carry
+`?from=…&amp;to=…`). Choose `$ART` and the listing from the children's URLs, and
+skip entries that are not HTML pages: `.xml`, `.md` (Shopify lists `/agents.md`),
+`.txt`, `.json`, `.pdf`. Treating a child sitemap as the content page is how a
+fully server-rendered store gets a false "empty shell" on C5, plus phantom
+missing-title, canonical, Open Graph, JSON-LD and viewport failures.
 
 **G2. Sitemap covers every page including listings** `[proven]`
 Listing/index pages are commonly omitted despite carrying `ItemList` schema.

@@ -35,8 +35,12 @@ are different jobs — say so explicitly rather than silently skipping them.
    *and* one listing page — they differ in structured data. Every page you audit
    must **return `2xx` HTML**. A stale sitemap entry now serving a 404, or a PDF
    listed in the sitemap, is not a page; auditing it invents missing titles and
-   viewports. Pick another URL. Not every site is a blog, either: on a marketing
-   site the "article" is just a representative content page.
+   viewports. Pick another URL. The same goes for a **sitemap index**: when
+   `/sitemap.xml` is a `<sitemapindex>` (every Shopify store, most Yoast WordPress
+   sites), its `<loc>` entries are child sitemaps, not pages. Open the children
+   and pick page URLs from those; never audit a `.xml`, `.md`, `.txt`, `.json` or
+   `.pdf` entry as the content page. Not every site is a blog, either: on a
+   marketing site the "article" is just a representative content page.
 2. **Gather evidence first, judge second.** Work through `references/checks.md`
    top to bottom, running the stated command for each check and saving the
    output. Do not skip a check because the answer seems obvious from markup you
