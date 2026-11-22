@@ -45,7 +45,10 @@ are different jobs — say so explicitly rather than silently skipping them.
    after `/blog/`, `/news/`, `/articles/` (so `/blog/some-post`, never `/blog/`).
    It must be **indexable** (no `noindex` in meta or `X-Robots-Tag`) and **not a
    utility page**: legal, privacy, terms, help, login, cart, search,
-   tag/category/author archives, `/@user` profiles.
+   tag/category/author archives, `/@user` profiles. Nor is it **the homepage**:
+   sitemaps often list the root without a trailing slash while every real page
+   has one, so "prefer URLs without a trailing slash" picks the homepage. Skip the
+   root and prefer deeper paths.
 2. **Confirm you are seeing the real site.** Some sites answer `200` with a bot
    check or maintenance page, even to a browser UA. Before judging content, look
    for known challenge signatures (Cloudflare `Just a moment…` / `cf-chl` /
