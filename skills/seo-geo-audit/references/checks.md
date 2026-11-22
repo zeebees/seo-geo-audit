@@ -425,10 +425,17 @@ missing-title, canonical, Open Graph, JSON-LD and viewport failures.
 
 **G2. Sitemap covers every page including listings** `[proven]`
 Listing/index pages are commonly omitted despite carrying `ItemList` schema.
+On a sitemap index, count the `<url>` entries in the **children**; the index's own
+`<loc>` count is the number of child sitemaps, not pages.
 
 **G3. Per-language alternates in the sitemap** `[proven]`
 Declare the XHTML namespace on the root, and give *every* language its own
 `<url>` entry repeating the full alternate set — not one entry for all.
+On a sitemap index, look for `xhtml:link` in the children. **Do not warn when the
+pages already declare `hreflang` alternates in their HTML** — that is a complete
+declaration on its own (Shopify ships per-locale sitemaps plus on-page hreflang and
+never `xhtml:link`). Report it as a pass with a note that sitemap alternates are
+optional redundancy.
 
 **G4. Missing pages return a true 404** `[proven]`
 ```bash
@@ -448,6 +455,9 @@ curl -sS https://$HOST/sitemap.xml | grep -oE '<lastmod>[^<]+' | sort -u | head
 ```
 Every URL sharing today's date means it is stamped at render, not at edit — the
 signal is then noise and crawlers learn to ignore it.
+On a sitemap index, read `<lastmod>` from the **children**. Shopify's index carries
+none while every child entry has one, so "no `<lastmod>`" judged on the index alone
+is wrong.
 
 **G6. Pages carry contextual internal links** `[proven]`
 ```bash
